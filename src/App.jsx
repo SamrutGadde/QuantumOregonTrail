@@ -29,13 +29,22 @@ function App() {
 
 
   return (
-    <div className="w-100 h-100">
-      <h1 className="text-3xl font-bold underline flex flex-col">
+      <div>
+        <div className='text-3xl font-bold underline'>Title</div>
+        <div className='flex flex-col mt-2 bg-red-500 '>
+          <div className="border-4 border-sky-500 rounded-full p-3">
+            Create a new room
+          </div>
+          <div className='border-4 border-sky-500 rounded-full p-3'>
+            Join a room
+          </div>
+        </div>
+      {/* <h1 className="text-3xl font-bold underline flex flex-col">
         {message}
       </h1>
       <input type="text" onChange={e => setInput(e.target.value)}/>
 
-      <button onClick={handleClick}>Send</button>
+      <button onClick={handleClick}>Send</button> */}
     </div>
   )
 
