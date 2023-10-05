@@ -1,28 +1,16 @@
-const WebSocket = require('ws');
+import WebSocket, {WebSocketServer} from "ws";
 
-const server = new WebSocket.Server({ port: 8080 });
+const wss = new WebSocketServer({ port: 8080 });
 
-function broadcastMessage(message) {
-  server.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
-  });
-}
-
-server.on('connection', (socket) => {
-  console.log('Client connected');
-
-  socket.on('message', (message) => {
-    console.log(`Received message: ${message}`);
-
-    // Handle incoming message here
-    broadcastMessage(message)
-
-    socket.send('Message received');
-  });
-
-  socket.on('close', () => {
-    console.log('Client disconnected');
+wss.on("connection", (ws) => {
+  ws.on('message', function message(data, isBinary) {
+    wss.clients.forEach(function each(client) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data, { binary: isBinary });
+      }
+    });
   });
 });
+
+console.log("Server started");
+
