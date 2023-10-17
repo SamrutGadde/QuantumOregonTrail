@@ -1,4 +1,4 @@
-import WebSocket, {WebSocketServer} from "ws";
+import WebSocket, { WebSocketServer } from "ws";
 import { exec } from "child_process";
 
 const wss = new WebSocketServer({ port: 8080 });
@@ -17,7 +17,7 @@ wss.on("connection", (ws) => {
 
   function leave(room) {
     if (!rooms[room][uuid]) return;
-  
+
     if (Object.keys(rooms[room]).length === 1) {
       delete rooms[room];
     } else {
@@ -27,19 +27,17 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (data) => {
     console.log(data);
-    const {message, meta, room} = JSON.parse(data);
+    const { message, meta, room } = JSON.parse(data);
 
-    if(meta === "join") {
-      if(! rooms[room]) rooms[room] = {}; // create the room
-      if(! rooms[room][uuid]) {
+    if (meta === "join") {
+      if (!rooms[room]) rooms[room] = {}; // create the room
+      if (!rooms[room][uuid]) {
         rooms[room][uuid] = ws; // join the room
-        console.log("joined room", room)
+        console.log("joined room", room);
       }
-    }
-    else if(meta === "leave") {
+    } else if (meta === "leave") {
       leave(room);
-    }
-    else if(!meta) {
+    } else if (!meta) {
       // send the message to all in the room
       Object.entries(rooms[room]).forEach(([, sock]) => sock.send({ message }));
     }
@@ -51,11 +49,9 @@ wss.on("connection", (ws) => {
       });
     });
   });
-
-
 });
 
-exec('python backend/python/game.py', (err, stdout, stderr) => {
+exec("python backend/python/game.py", (err, stdout, stderr) => {
   if (err) {
     console.error(err);
     return;
@@ -64,4 +60,3 @@ exec('python backend/python/game.py', (err, stdout, stderr) => {
 });
 
 console.log("Server started");
-

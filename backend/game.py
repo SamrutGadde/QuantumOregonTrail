@@ -2,44 +2,83 @@ import asyncio
 import websockets
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer, execute
 import numpy as np
+import math
+import json
 
-playerReg = None
-envReg = None
 obstacles = ["river", "bandits", "sickness"]
-num_players = 0
-MAX_MATERIALS = 3000
-MAX_MEDICINE = 10
+OBSTACLE_NUM = 7
+MAX_MATERIALS = 1000
+MAX_CURRENCY = 1000
+MAX_MEDICINE = 50
+MAX_MED_ALLOC = 5
+MAX_MAT_ALLOC = 300
+MAX_CUR_ALLOC = 300
 
 
 async def game_socket(websocket):
-    num_players = await websocket.recv()
-    print(f"<<< {num_players}")
-    num_players = int(num_players)
+    print("Game socket connected, waiting for start signal")
+    message = await websocket.recv()
+    message = json.loads(message)
+    print(f"<<< {message['message']}")
+    materials = message['materials']
+    currency = message['currency']
+    medicine = message['medicine']
+    print(f"Materials: {materials}, Currency: {currency}, Medicine: {medicine}")
+    num_players = 4
     if num_players < 1 or num_players > 4:
         print("Invalid number of players")
-        return
+    
+    # Generate obstacles for this game
+    gameObstacles = []
+    for i in range(OBSTACLE_NUM):
+        gameObstacles.append(obstacles[np.random.randint(0, 3)])
+    # gameObstacles = ["river", "bandits", "sickness"]
+    print(f"Obstacles: {gameObstacles}")
+        
+    for obstacle in gameObstacles:
+        message = await handle_event(obstacle, websocket, message)
+    
+    ## if player made it here, they win
+    message['message'] = "win"
+    await websocket.send(json.dumps(message))
+    print("Game finished")
+    
+    # await websocket.recv() # wait for player to confirm game end
+    return
     
 
-def handle_event(event, ws):
+async def handle_event(event, ws, message):
+    status = ""
     if event == "river":
-        river(ws)
+        status = await river(ws, message)
     elif event == "bandits":
-        bandits(ws)
-    elif event == "mountain":
-        mountain(ws)
+        status = await bandits(ws, message)
     elif event == "sickness":
-        sickness(ws)
+        status = await sickness(ws, message)
     else:
         print("Invalid event")
+        
+    print(f"Event {event} finished")
+    message = json.loads(await ws.recv())
+    print(f"<<< {message}")
+    return message
 
-# River event: |+> basis measurement with phase application to |1> if successful
-def river(ws):
-    MAX_RIVER = 1000
-    ws.send("start_river")
+# River event: superposition with phase application to |1> if successful
+async def river(ws, message):
+    print("start_river")
+    message['message'] = "start_river"
+    materials = message['materials']
+    await ws.send(json.dumps(message))
     riverReg = QuantumRegister(1, 'river')
-    oldRange = MAX_RIVER
+    oldRange = MAX_MAT_ALLOC
     newRange = np.pi
-    newValue = (((850) * newRange) / oldRange)
+    raw = await ws.recv();
+    message = json.loads(raw)
+    materialsUsed = materials - message['materials']
+    if (materialsUsed < 0):
+        print("Invalid materials used")
+        return
+    newValue = (((materialsUsed) * newRange) / oldRange)
     qc = QuantumCircuit(riverReg, ClassicalRegister(1))
     qc.h(riverReg)
     qc.p(newValue, riverReg)
@@ -50,37 +89,96 @@ def river(ws):
     job = execute(qc, backend, shots=1000)
     counts = job.result().get_counts(qc)
     print(counts)
-    passChance = counts["1"]
+    passChance = counts["1"] if "1" in counts else 0
     ## Time to roll the quantum dice
     dice = qrng(1000)
     if dice <= passChance:
-        ws.send("pass_river")
+        message['message'] = "pass_river"
     else:
-        ws.send("fail_river")
+        message['message'] = "fail_river"
     
+    await ws.send(json.dumps(message))
+    return message
 
 # Bandit event: Entanglement of players and bandit
-def bandits(ws):
-    ws.send("start_bandits")
+# Goal is to put bandit and player in |1> state
+async def bandits(ws, message):
+    print("start_bandits", message)
+    message['message'] = "start_bandits"
+    materials = message['materials']
+    currency = message['currency']
+    medicine = message['medicine']
+    await ws.send(json.dumps(message))
     player_reg = QuantumRegister(1, 'player')
     bandit_reg = QuantumRegister(1, 'bandit')
+    oldCurrencyRange = MAX_CUR_ALLOC
+    newCurrencyRange = np.pi
+    oldMaterialsRange = MAX_MAT_ALLOC
+    newMaterialsRange = np.pi/2
+    oldMedicineRange = MAX_MED_ALLOC
+    newMedicineRange = np.pi/2
+    raw = await ws.recv();
+    message = json.loads(raw)
+    currencyUsed = currency - message['currency']
+    materialsUsed = materials - message['materials']
+    medicineUsed = medicine - message['medicine']
+    if (currencyUsed < 0 or materialsUsed < 0 or medicineUsed < 0):
+        print("Invalid materials used")
+        return
+    newCurrencyValue = (((currencyUsed) * newCurrencyRange) / oldCurrencyRange)
+    newMaterialsValue = (((materialsUsed) * newMaterialsRange) / oldMaterialsRange)
+    newMedicineValue = (((medicineUsed) * newMedicineRange) / oldMedicineRange)
     cr = ClassicalRegister(2)
     qc = QuantumCircuit(player_reg, bandit_reg, cr)
-    
-    # creating entangled bell state
+
+    # creating entangled bell state between player and bandit
     qc.h(player_reg)
     qc.cx(player_reg, bandit_reg)
     
-    # applying phase shift to player 
-        
+    # apply phase shift to player
+    qc.p(newCurrencyValue, player_reg) # currency
+    qc.rx(newMaterialsValue + newMedicineValue, player_reg) # materials and medicine
+    
+    qc.cx(player_reg, bandit_reg)
+    qc.h(player_reg)
+    
+    
+    # Bell state measurement
+    qc.measure(player_reg, 0)
+    qc.measure(bandit_reg, 1)
+
+    backend = Aer.get_backend('qasm_simulator')
+    job = execute(qc, backend, shots=1000)
+    counts = job.result().get_counts(qc)
+    print(counts)
+    
+    passChance = counts["11"] if "11" in counts else 0
+    ## Time to roll the quantum dice
+    dice = qrng(1000)
+    if dice <= passChance:
+        message['message'] = "pass_bandits"
+    else:
+        message['message'] = "fail_bandits"
+    
+    await ws.send(json.dumps(message))
+    return message
 
 # Sickness event: Superposition of all players, then measurement
-def sickness(ws):
-    ws.send("start_sickness")
+async def sickness(ws, message):
+    print("start_sickness")
+    message['message'] = "start_sickness"
+    medicine = message['medicine']
+    await ws.send(json.dumps(message))
     num_players = 4
     player_reg = QuantumRegister(num_players, 'player')
-    medAlloc = np.random.randint(0, 10, num_players)
-    medAlloc = [8, 10, 8, 10]
+    message = json.loads(await ws.recv())
+    medAlloc = []
+    medAlloc.append(int(message['player1']))
+    medAlloc.append(int(message['player2']))
+    medAlloc.append(int(message['player3']))
+    medAlloc.append(int(message['player4']))
+    # medAlloc = np.random.randint(0, 10, num_players)
+    # medAlloc = [8, 10, 8, 10]
     output = QuantumRegister(1, 'output')
     cr = ClassicalRegister(num_players)
     qc = QuantumCircuit(player_reg, output, cr)
@@ -89,7 +187,7 @@ def sickness(ws):
     for i in range(num_players):
         if medAlloc[i] <= 0:
             continue
-        theta = medAlloc[i] * np.pi / 10
+        theta = medAlloc[i] * np.pi / MAX_MED_ALLOC
         qc.p(theta, player_reg[i])
     qc.h(player_reg)
     
@@ -114,21 +212,28 @@ def sickness(ws):
             print(f"player {i} has fallen sick!")
     
     if survCount < num_players/2:
-        ws.send("fail_sickness")
+        message['message'] = "fail_sickness"
     else:
-        ws.send("pass_sickness")
+        message['message'] = "pass_sickness"
     
+    await ws.send(json.dumps(message))
+    return message    
     
 ## Returns a random number between 1 and max, quantumly
 def qrng(max):
-    qc = QuantumCircuit(1, 1)
-    qc.h(0)
-    qc.measure(0, 0)
+    bits = int(math.log(max, 2)) + 1
+    qr = QuantumRegister(bits, 'qr')
+    cr = ClassicalRegister(bits)
+    qc = QuantumCircuit(qr, cr)
+    qc.h(qr)
+    qc.measure(qr, cr)
     backend = Aer.get_backend('qasm_simulator')
-    job = execute(qc, backend, shots=1024)
+    job = execute(qc, backend, shots=1)
     counts = job.result().get_counts(qc)
-    return int(counts[0]) / int(counts[1]) % max + 1  # +1 to make it 1 to max instead of 0 to max-1
-    
+    int_counts = {}
+    for bitstring in counts:
+        int_counts[int(bitstring,2)] = counts[bitstring]
+    return int(list(int_counts.keys())[0])
 
 async def main():
     async with websockets.serve(game_socket, "localhost", 8080):

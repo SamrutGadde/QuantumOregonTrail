@@ -63,22 +63,27 @@ def bandits(ws):
     bandit_reg = QuantumRegister(1, 'bandit')
     cr = ClassicalRegister(2)
     qc = QuantumCircuit(player_reg, bandit_reg, cr)
-    
-    # creating entangled bell state with equal probability of 0 and 1
+
+    # creating entangled bell state between player and bandit
     qc.h(player_reg)
-    qc.h(bandit_reg)
     qc.cx(player_reg, bandit_reg)
     
+    # apply phase shift to player
+    qc.p(np.pi/2, player_reg)
+    qc.rx(np.pi/2, player_reg)
+    
+    qc.cx(player_reg, bandit_reg)
+    qc.h(player_reg)
+    
+    
+    # Bell state measurement
     qc.measure(player_reg, 0)
     qc.measure(bandit_reg, 1)
-    
+
     backend = Aer.get_backend('qasm_simulator')
     job = execute(qc, backend, shots=1000)
     counts = job.result().get_counts(qc)
     print(counts)
-    
-    
-    # applying phase shift to player 
 
 ## Returns a random number between 1 and max, quantumly
 def qrng(max):
@@ -93,7 +98,7 @@ def qrng(max):
     counts = job.result().get_counts(qc)
     int_counts = {}
     for bitstring in counts:
-      int_counts[int(bitstring,2)] = counts[bitstring]
+        int_counts[int(bitstring,2)] = counts[bitstring]
     return int(list(int_counts.keys())[0])
 
 bandits(None)
