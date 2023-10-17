@@ -6,7 +6,7 @@ import math
 import json
 
 obstacles = ["river", "bandits", "sickness"]
-OBSTACLE_NUM = 7
+OBSTACLE_NUM = 5
 MAX_MATERIALS = 1000
 MAX_CURRENCY = 1000
 MAX_MEDICINE = 50
